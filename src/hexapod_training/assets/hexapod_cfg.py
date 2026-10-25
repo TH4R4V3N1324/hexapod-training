@@ -1,6 +1,8 @@
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import DelayedPDActuatorCfg, ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
+from isaaclab_newton.sim.schemas import NewtonArticulationCfg
+from isaaclab_physx.sim.schemas import PhysxArticulationCfg
 from pathlib import Path
 
 ASSETS_DIR = Path(__file__).resolve().parent   # if hexapod_cfg.py sits in assets/
@@ -10,6 +12,10 @@ HEXAPOD_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         usd_path=str(HEXAPOD_USD_PATH),
         activate_contact_sensors=True,   # needed for foot-contact rewards
+        articulation_props=[
+            PhysxArticulationCfg(enabled_self_collisions=True),
+            NewtonArticulationCfg(self_collision_enabled=True),
+        ],
     ),
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 0.145),
