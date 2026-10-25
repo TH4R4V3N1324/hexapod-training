@@ -27,10 +27,10 @@ HEXAPOD_CFG = ArticulationCfg(
             joint_names_expr=[".*_joint"],
             effort_limit_sim=2.94,       # N·m, as in the URDF
             velocity_limit_sim=4.7,      # rad/s
-            stiffness=20.0,              # placeholder until the servo is measured
-            damping=0.5,
-            armature=0.026,
-            friction=0.05,
+            stiffness=39.0,              # N·m/rad
+            damping=1.3,                 # N·m·s/rad
+            armature=0.025,              # kg·m²
+            friction=0.16,               # N·m
             min_delay=0, 
             max_delay=2,
         ),
