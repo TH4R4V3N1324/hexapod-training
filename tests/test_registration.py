@@ -14,7 +14,7 @@ def test_task_registrations():
     """The project tasks must expose valid environment and agent entry points."""
     expected = {
         "HexapodTraining-Locomotion-Hexapod": {
-            "entry_point": "isaaclab.envs:ManagerBasedRLEnv",
+            "entry_point": "hexapod_training.tasks.locomotion.env:HexapodLocomotionEnv",
             "env_cfg_entry_point": "hexapod_training.tasks.locomotion.config.hexapod.env_cfg:LocomotionEnvCfg",
             "default_agent": "rsl_rl",
         },
