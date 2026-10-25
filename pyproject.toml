@@ -1,0 +1,116 @@
+# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+[build-system]
+requires = ["uv_build>=0.12.6,<0.13"]
+build-backend = "uv_build"
+
+[project]
+name = "hexapod_training"
+version = "0.1.0"
+description = "Isaac Lab environments for hexapod_training."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Raven Hollick" },
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "isaaclab[rsl-rl]==3.0.0",
+]
+
+[project.entry-points."isaaclab.tasks"]
+hexapod_training = "hexapod_training.tasks"
+
+[project.optional-dependencies]
+all = ["isaaclab[all]==3.0.0"]
+dev = ["isaaclab[dev]==3.0.0"]
+importers = ["isaaclab[importers]==3.0.0"]
+isaacsim = ["isaaclab[isaacsim]==3.0.0"]
+leapp = ["isaaclab[leapp]==3.0.0"]
+mimic = ["isaaclab[mimic]==3.0.0"]
+ov = ["isaaclab[ov]==3.0.0"]
+ovphysx = ["isaaclab[ovphysx]==3.0.0"]
+ovrtx = ["isaaclab[ovrtx]==3.0.0"]
+rerun = ["isaaclab[rerun]==3.0.0"]
+rlinf = ["isaaclab[rlinf]==3.0.0"]
+rsl-rl = ["isaaclab[rsl-rl]==3.0.0"]
+sb3 = ["isaaclab[sb3]==3.0.0"]
+skrl = ["isaaclab[skrl]==3.0.0"]
+skrl-jax = ["isaaclab[skrl-jax]==3.0.0"]
+teleop = ["isaaclab[teleop]==3.0.0"]
+test = ["isaaclab[test]==3.0.0"]
+tetrahedralization = ["isaaclab[tetrahedralization]==3.0.0"]
+torchrl = ["isaaclab[torchrl]==3.0.0"]
+video = ["isaaclab[video]==3.0.0"]
+viser = ["isaaclab[viser]==3.0.0"]
+wandb = ["isaaclab[wandb]==3.0.0"]
+
+[dependency-groups]
+dev = ["codespell>=2.4", "pre-commit>=4.2", "pytest>=8.3", "ruff>=0.11"]
+
+[tool.uv]
+index-strategy = "unsafe-best-match"
+prerelease = "allow"
+
+[tool.uv.build-backend]
+module-name = "hexapod_training"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["hexapod_training"]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "isaaclab",
+    "isaaclab-rl",
+    "isaaclab-tasks",
+    "isaaclab-assets",
+    "first-party",
+    "local-folder",
+]
+
+[tool.ruff.lint.isort.sections]
+isaaclab = ["isaaclab", "isaaclab_newton", "isaaclab_ov", "isaaclab_physx"]
+"isaaclab-rl" = ["isaaclab_rl"]
+"isaaclab-tasks" = ["isaaclab_tasks"]
+"isaaclab-assets" = ["isaaclab_assets"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["F401", "F403"]
+"**/__init__.pyi" = ["F401", "F403"]
+"scripts/**/*.py" = ["E402"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.pyright]
+include = ["src", "scripts", "tests"]
+exclude = ["**/__pycache__", "**/logs", ".git", ".venv", ".vscode"]
+typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "unit: test exercises isolated logic and does not launch the simulator",
+    "integration: test drives the simulator/scene/environment end-to-end",
+    "smoke: tests for core installation, task, and RL functionality",
+    "kitless: test must pass inside the Kit-less container, which has no Isaac Sim runtime",
+]
+
+[tool.codespell]
+skip = "*.usd,*.usda,*.usdc,*.json,*.onnx,*.pt,*.mp4,*.data,uv.lock,logs"
+
+[[tool.uv.index]]
+url = "https://pypi.nvidia.com"
+explicit = false
