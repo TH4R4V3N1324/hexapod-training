@@ -128,3 +128,12 @@ skip = "*.usd,*.usda,*.usdc,*.json,*.onnx,*.pt,*.mp4,*.data,uv.lock,logs"
 [[tool.uv.index]]
 url = "https://pypi.nvidia.com"
 explicit = false
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
+torchvision = { index = "pytorch-cu130" }
