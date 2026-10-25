@@ -14,7 +14,7 @@ from . import agents
 
 gym.register(
     id="HexapodTraining-Locomotion-Hexapod",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point="hexapod_training.tasks.locomotion.env:HexapodLocomotionEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.rough_env_cfg:HexapodRoughEnvCfg",
@@ -25,7 +25,7 @@ gym.register(
 
 gym.register(
     id="Hexapod-Flat-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point="hexapod_training.tasks.locomotion.env:HexapodLocomotionEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.flat_env_cfg:HexapodFlatEnvCfg",
