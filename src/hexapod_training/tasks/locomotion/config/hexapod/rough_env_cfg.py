@@ -106,6 +106,10 @@ class HexapodRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.commands.base_velocity.ranges.lin_vel_x = (-0.17, 0.17)
         self.commands.base_velocity.ranges.lin_vel_y = (-0.10, 0.10)
         self.commands.base_velocity.ranges.ang_vel_z = (-0.5, 0.5)
+        # terrain levels follow how much of its commanded walking each robot did: the template's 2 m
+        # from the start is more than a robot this slow covers, so it only ever demoted
+        self.commands.base_velocity.class_type = hexapod_mdp.TrackedVelocityCommand
+        self.curriculum.terrain_levels.func = hexapod_mdp.terrain_levels_progress
         
         # the hand-written tripod gait walks; the policy only shifts each foot target
         self.actions.joint_pos = hexapod_mdp.GaitResidualActionCfg()

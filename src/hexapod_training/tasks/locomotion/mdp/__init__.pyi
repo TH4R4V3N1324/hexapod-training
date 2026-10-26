@@ -7,6 +7,8 @@ from isaaclab.envs.mdp import *  # noqa: F401, F403
 
 from .actions import GaitResidualAction as GaitResidualAction
 from .actions import GaitResidualActionCfg as GaitResidualActionCfg
+from .commands import TrackedVelocityCommand as TrackedVelocityCommand
+from .curriculums import terrain_levels_progress as terrain_levels_progress
 from .events import reset as reset
 from .observations import gait_phase as gait_phase
 from .observations import observation as observation
