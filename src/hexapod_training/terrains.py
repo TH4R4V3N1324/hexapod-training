@@ -2,6 +2,10 @@ from isaaclab.terrains import TerrainGeneratorCfg
 import isaaclab.terrains as terrain_gen
 
 HEXAPOD_ROUGH_CFG = TerrainGeneratorCfg(
+    # rows in order of difficulty, for the terrain_levels curriculum. The template turns this on in
+    # its __post_init__, but the env cfg swaps the whole generator in afterwards, which reset it to
+    # False: every tile got a random difficulty and the levels meant nothing.
+    curriculum=True,
     size=(4.0, 4.0),         # one tile, m (ANYmal uses 8 x 8)
     border_width=10.0,
     num_rows=10,             # difficulty levels
