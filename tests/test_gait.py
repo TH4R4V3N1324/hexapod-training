@@ -134,3 +134,20 @@ def test_swing_easing_blend():
         u = 1 - st
         expected_x = 4 * u * st**3 + st**4
         assert torch.allclose(trajectory.evalBezier(points, s)[0], expected_x, atol=1e-6)
+
+
+def test_cap_command():
+    from hexapod_training.gait.tripod_gait import cap_command
+
+    gait = TripodGait(1)
+    radius, top = gait.max_body_radius, gait.max_foot_speed
+    commands = torch.tensor([[0.05, 0.0, 0.0], [0.17, 0.1, 0.5], [0.0, 0.0, 0.0]])
+    capped, foot_speed = cap_command(commands, radius, top)
+    # Within reach: untouched. Too fast: scaled down evenly onto the limit. Standing: still zero.
+    assert torch.allclose(capped[0], commands[0])
+    assert torch.allclose(capped[1] / commands[1], (capped[1, 0] / commands[1, 0]).expand(3))
+    assert abs(torch.hypot(capped[1, 0], capped[1, 1]) + capped[1, 2].abs() * radius - top) < 1e-6
+    assert torch.allclose(capped[2], torch.zeros(3)) and foot_speed[2] == 0.0
+    # Capping again changes nothing, so the gait sees the same command the reward does
+    again, _ = cap_command(capped, radius, top)
+    assert torch.allclose(again, capped)

@@ -7,6 +7,8 @@ import torch
 
 from isaaclab.envs.mdp import UniformVelocityCommand, UniformVelocityCommandCfg
 
+from hexapod_training.gait.tripod_gait import TripodGait, cap_command
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
@@ -25,6 +27,23 @@ class TrackedVelocityCommand(UniformVelocityCommand):
         super().__init__(cfg, env)
         self.commanded_distance = torch.zeros(self.num_envs, device=self.device)
         self.progress = torch.zeros(self.num_envs, device=self.device)
+        # The sampled command, before the gait's speed cap. vel_command_b is rebuilt from it every
+        # step, since the cap would otherwise compound on the x and y it only sets at resampling.
+        self.sampled_command = torch.zeros_like(self.vel_command_b)
+        gait = TripodGait(1, self.device)
+        self._max_body_radius = gait.max_body_radius
+        self._max_foot_speed = gait.max_foot_speed
+
+    def _resample_command(self, env_ids: Sequence[int]):
+        super()._resample_command(env_ids)
+        self.sampled_command[env_ids] = self.vel_command_b[env_ids]
+
+    def _update_command(self):
+        # Heading control rewrites yaw, and standing envs are zeroed, then the gait's cap applies, so
+        # the reward, the curriculum and the gait all see the same reachable command
+        self.vel_command_b[:] = self.sampled_command
+        super()._update_command()
+        self.vel_command_b[:], _ = cap_command(self.vel_command_b, self._max_body_radius, self._max_foot_speed)
 
     def _update_metrics(self):
         super()._update_metrics()
