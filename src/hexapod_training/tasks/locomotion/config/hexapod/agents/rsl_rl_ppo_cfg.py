@@ -14,6 +14,10 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     max_iterations = 1500
     save_interval = 50
     experiment_name = "hexapod_flat"
+    # Actions feed back as the last_action observation and into action_l2, and nothing else bounds
+    # them: with zero_residual they don't move the robot, so they grew every step until the critic
+    # went to inf. ±1 is the residual's designed range (1.5 cm xy, 4 cm z), seldom reached in training.
+    clip_actions = 1.0
     obs_groups = {"actor": ["policy"], "critic": ["policy"]}
     actor = RslRlMLPModelCfg(
         hidden_dims=[512, 256, 128],
