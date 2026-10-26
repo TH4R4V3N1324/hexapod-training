@@ -2,7 +2,17 @@
 
 import torch
 
-from .gait_config import COXA_LENGTH, FEMUR_LENGTH, TIBIA_LENGTH
+from .gait_config import (
+    COXA_LENGTH,
+    FEMUR_LENGTH,
+    FEMUR_MAX,
+    FEMUR_MIN,
+    MAX_COXA_ANGLE,
+    REACH_TOLERANCE,
+    TIBIA_LENGTH,
+    TIBIA_MAX,
+    TIBIA_MIN,
+)
 
 
 class KinematicSolver:
@@ -74,3 +84,20 @@ class KinematicSolver:
         y = horizontal_reach * torch.sin(coxa_angle)
 
         return torch.stack((x, y, z), dim=-1)
+
+    def reachable(self, target_position):
+        """
+        Whether the leg can reach each target (..., 3) inside its joint limits, ported from
+        GaitController::reachable. Returns a (...) bool tensor.
+        """
+        angles = self.solveIK(target_position)
+        coxa, femur, tibia = angles.unbind(-1)
+        within_limits = (
+            (coxa.abs() <= MAX_COXA_ANGLE)
+            & (femur >= FEMUR_MIN)
+            & (femur <= FEMUR_MAX)
+            & (tibia >= TIBIA_MIN)
+            & (tibia <= TIBIA_MAX)
+        )
+        # The IK clamps an out-of-reach target to the nearest pose, which FK then misses it by
+        return within_limits & (torch.linalg.norm(self.solveFK(angles) - target_position, dim=-1) <= REACH_TOLERANCE)

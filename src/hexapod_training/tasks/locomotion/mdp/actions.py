@@ -10,6 +10,7 @@ from isaaclab.managers.manager_term_cfg import ActionTermCfg
 from isaaclab.utils import configclass
 
 from hexapod_training.gait import JOINT_NAMES, KinematicSolver, TripodGait
+from hexapod_training.gait.gait_config import NOMINAL_BODY_HEIGHT, SWING_LIFT
 
 if TYPE_CHECKING:
     from isaaclab.assets.articulation import Articulation
@@ -17,11 +18,20 @@ if TYPE_CHECKING:
 
 
 class GaitResidualAction(ActionTerm):
-    """The tripod gait drives the walking; the policy shifts each foot target before IK.
+    """The tripod gait drives the walking; the policy adjusts how it steps and where each foot goes.
 
-    The action is an (x, y, z) offset per leg in its leg frame, 18 values in leg 1-6 order, scaled by
-    cfg.scale_xy / cfg.scale_z (m). The gait steps once per policy step, and the joint targets are held across the
-    decimated physics steps.
+    The action has 25 values:
+
+    - 0-17: an (x, y, z) offset per leg in its leg frame, in leg 1-6 order, scaled by cfg.scale_xy /
+      cfg.scale_z (m), added to each foot target before IK.
+    - 18-23: each leg's swing lift, SWING_LIFT plus cfg.swing_lift_scale (m) per unit, within
+      cfg.swing_lift_range. Unlike a z offset this raises the middle of the swing and still lands
+      on target.
+    - 24: the body height, NOMINAL_BODY_HEIGHT plus cfg.body_height_scale (m) per unit, within
+      cfg.body_height_range. The gait glides to it at BODY_HEIGHT_RATE, so a taller stance takes time.
+
+    Zero is the hand-written gait. The gait steps once per policy step, and the joint targets are
+    held across the decimated physics steps.
     """
 
     cfg: GaitResidualActionCfg
@@ -38,13 +48,16 @@ class GaitResidualAction(ActionTerm):
         self._raw_actions = torch.zeros(self.num_envs, self.action_dim, device=self.device)
         self._processed_actions = torch.zeros(self.num_envs, len(JOINT_NAMES), device=self.device)
         self.foot_targets = torch.zeros(self.num_envs, 6, 3, device=self.device)  # leg frame, after offsets
-        # Foot offset per unit action (m), per leg-frame axis; zero_residual gives the gait-alone baseline
-        scale = 0.0 if cfg.zero_residual else 1.0
-        self._scale = torch.tensor([cfg.scale_xy, cfg.scale_xy, cfg.scale_z], device=self.device) * scale
+        # Foot offset per unit action (m), per leg-frame axis
+        self._scale = torch.tensor([cfg.scale_xy, cfg.scale_xy, cfg.scale_z], device=self.device)
+        # zero_residual ignores the policy, leaving the gait alone: the baseline
+        self._gain = 0.0 if cfg.zero_residual else 1.0
+        self.swing_lift = torch.full((self.num_envs, 6), SWING_LIFT, device=self.device)  # m, as commanded
+        self.body_height = torch.full((self.num_envs,), NOMINAL_BODY_HEIGHT, device=self.device)  # m, as commanded
 
     @property
     def action_dim(self) -> int:
-        return 18
+        return 25
 
     @property
     def raw_actions(self) -> torch.Tensor:
@@ -56,9 +69,17 @@ class GaitResidualAction(ActionTerm):
 
     def process_actions(self, actions: torch.Tensor):
         self._raw_actions[:] = actions
+        actions = self._raw_actions * self._gain
+        offsets = actions[:, :18].view(self.num_envs, 6, 3) * self._scale
+        self.swing_lift = torch.clamp(
+            SWING_LIFT + actions[:, 18:24] * self.cfg.swing_lift_scale, *self.cfg.swing_lift_range
+        )
+        self.body_height = torch.clamp(
+            NOMINAL_BODY_HEIGHT + actions[:, 24] * self.cfg.body_height_scale, *self.cfg.body_height_range
+        )
         commands = self._env.command_manager.get_command(self.cfg.command_name)[:, :3]
-        feet = self.gait.step(commands, self._env.step_dt)
-        self.foot_targets = feet + self._raw_actions.view(self.num_envs, 6, 3) * self._scale
+        feet = self.gait.step(commands, self._env.step_dt, swing_lift=self.swing_lift, body_height=self.body_height)
+        self.foot_targets = feet + offsets
         self._processed_actions = self.ik.solveIK(self.foot_targets).view(self.num_envs, -1)
 
     def apply_actions(self):
@@ -82,5 +103,13 @@ class GaitResidualActionCfg(ActionTermCfg):
     """Horizontal foot offset per unit action (m)."""
     scale_z: float = 0.04
     """Vertical foot offset per unit action (m)."""
+    swing_lift_scale: float = 0.04
+    """Swing lift per unit action (m), about the default SWING_LIFT of 0.06 m."""
+    swing_lift_range: tuple[float, float] = (0.03, 0.10)
+    """Swing lift limits (m). The foot peaks at about 0.88x this, so 0.10 clears about 8.8 cm."""
+    body_height_scale: float = 0.026
+    """Body height per unit action (m), about the nominal 0.134 m."""
+    body_height_range: tuple[float, float] = (0.10, 0.16)
+    """Body height limits (m), hips above the ground; 0.16 is set_height's maximum."""
     zero_residual: bool = False
     """Ignore the policy's actions, leaving the gait alone: the baseline and first test."""

@@ -8,13 +8,18 @@ balancing offsets (see tasks.locomotion.mdp.actions.GaitResidualAction).
 import torch
 
 from .gait_config import (
+    BODY_HEIGHT_RATE,
     IDLE_DEADZONE,
+    MAX_BODY_HEIGHT,
     MAX_STRIDE_LENGTH,
     MAX_TARGET_SPEED,
+    MIN_BODY_HEIGHT,
     MIN_PHASE_DURATION,
+    NOMINAL_BODY_HEIGHT,
     PHASE_DURATION,
     TRIPOD_GROUPS,
 )
+from .kinematic_solver import KinematicSolver
 from .trajectory_generator import TrajectoryGenerator
 
 
@@ -41,6 +46,7 @@ class TripodGait:
         self.num_envs = num_envs
         self.device = device
         self.trajectory = TrajectoryGenerator(device)
+        self.ik = KinematicSolver()
 
         self.groups = len(TRIPOD_GROUPS)
         self.group_mask = torch.zeros(self.groups, 6, dtype=torch.bool, device=device)
@@ -60,6 +66,7 @@ class TripodGait:
         self.phase = torch.zeros(num_envs, dtype=torch.long, device=device)  # index into TRIPOD_GROUPS
         self.phase_progress = torch.zeros(num_envs, device=device)  # [0, 1)
         self.phase_duration = torch.full((num_envs,), PHASE_DURATION, device=device)
+        self.body_height = torch.full((num_envs,), NOMINAL_BODY_HEIGHT, device=device)  # m, hips above ground
         self.reset()
 
     def reset(self, env_ids=None):
@@ -73,6 +80,30 @@ class TripodGait:
         self.phase[env_ids] = 0
         self.phase_progress[env_ids] = 0.0
         self.phase_duration[env_ids] = PHASE_DURATION
+        self.body_height[env_ids] = NOMINAL_BODY_HEIGHT
+
+    def limit_swing_lift(self, swing, ground_z):
+        """
+        Lower swinging feet that a high lift would take outside the leg's reach, keeping as much of
+        the lift as fits. Ported from GaitController::limitSwingLift.
+
+        Args:
+            swing: (num_envs, 6, 3) swing foot targets (leg frame).
+            ground_z: (num_envs, 6) the ground height under each foot at this point of the swing.
+        """
+        lift = swing[..., 2] - ground_z
+        keep = (lift <= 0.0) | self.ik.reachable(swing)
+        low = torch.zeros_like(lift)  # share of the lift kept
+        high = torch.ones_like(lift)
+        lowered = swing.clone()
+        for _ in range(10):
+            mid = 0.5 * (low + high)
+            lowered[..., 2] = ground_z + lift * mid
+            fits = self.ik.reachable(lowered)
+            low = torch.where(fits, mid, low)
+            high = torch.where(fits, high, mid)
+        lowered[..., 2] = ground_z + lift * low
+        return torch.where(keep.unsqueeze(-1), swing, lowered)
 
     def leg_cycle_phase(self):
         """
@@ -84,18 +115,31 @@ class TripodGait:
         phases_since_lift_off = (self.phase.unsqueeze(-1) - self.leg_group) % self.groups
         return (phases_since_lift_off + self.phase_progress.unsqueeze(-1)) / self.groups
 
-    def step(self, commands, dt):
+    def step(self, commands, dt, swing_lift=None, body_height=None):
         """
         Advance the gait by one tick. Step at the policy rate (dt = 0.02 s in the velocity task).
 
         Args:
             commands: (num_envs, 3) body velocity (forward m/s, left m/s, yaw rad/s).
             dt: the time since the last tick (s).
+            swing_lift: optional (num_envs, 6) swing lift per leg (m), the step_height of each leg's
+                swing; SWING_LIFT if not given. Lowered where it would take a foot out of reach.
+            body_height: optional (num_envs,) body height to move towards (m), hips above the ground,
+                within MIN_BODY_HEIGHT to MAX_BODY_HEIGHT; the body rises or falls at BODY_HEIGHT_RATE.
 
         Returns:
             (num_envs, 6, 3) foot targets per leg 1-6, each in its own leg frame.
         """
         idle = (commands.abs() < IDLE_DEADZONE).all(dim=-1)
+
+        # The body glides to its new height, as set_height does; feet stand that far below the hips
+        if body_height is not None:
+            height_step = torch.clamp(body_height, MIN_BODY_HEIGHT, MAX_BODY_HEIGHT) - self.body_height
+            max_step = BODY_HEIGHT_RATE * dt
+            self.body_height = self.body_height + torch.clamp(height_step, -max_step, max_step)
+        ground_z = (-self.body_height).view(-1, 1)  # (num_envs, 1), foot height on level ground
+        if swing_lift is None:
+            swing_lift = self.trajectory.swing_lift
 
         # Current command, capped at what this gait can do
         commands, foot_speed = cap_command(commands, self.max_body_radius, self.max_foot_speed)
@@ -119,6 +163,7 @@ class TripodGait:
         # Swing landing targets follow the command, at a limited rate. Both ends stay inside the
         # stride circle, so every point in between does too.
         desired = self.trajectory.swingTarget(self.trajectory.footDisplacement(forward, left, yaw, stance_time / 2.0))
+        desired[..., 2] = ground_z
         target_step = desired - self.swing_target
         step_norm = torch.linalg.norm(target_step, dim=-1, keepdim=True)
         target_step = target_step * torch.clamp(MAX_TARGET_SPEED * dt / step_norm.clamp_min(1e-9), max=1.0)
@@ -131,13 +176,20 @@ class TripodGait:
 
         # Swing feet follow a curve from their lift-off point to their landing target,
         # stance feet move back by the body's motion
-        spline = self.trajectory.genSwingSpline(self.swing_start, self.swing_target)
+        spline = self.trajectory.genSwingSpline(self.swing_start, self.swing_target, swing_lift)
         swing = self.trajectory.evalBezier(spline, s.unsqueeze(-1))
+        # A high lift can fold the leg past its reach, worst near the hip: keep what fits
+        start_z = self.swing_start[..., 2]
+        swing = self.limit_swing_lift(swing, start_z + (self.swing_target[..., 2] - start_z) * s.unsqueeze(-1))
         swing = torch.where((s >= 1.0).view(-1, 1, 1), self.swing_target, swing)
         stance = self.trajectory.stanceTarget(
             self.foot_pos, self.trajectory.footDisplacementFrom(forward, left, yaw, self.foot_pos, move_dt)
         )
-        self.foot_pos = torch.where(self.swinging.unsqueeze(-1), swing, stance)
+        stance[..., 2] = ground_z  # on the ground, at the body's height
+        # Only once its swing is under way: an idle gait holds at the start of a phase with the next
+        # group marked swinging, and those feet stay on the ground (and follow the body height) until it moves
+        in_air = self.swinging & (s > 0.0).unsqueeze(-1)
+        self.foot_pos = torch.where(in_air.unsqueeze(-1), swing, stance)
 
         # Phase transition
         self.phase_progress = s

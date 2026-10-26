@@ -11,6 +11,18 @@ SWING_EASING = 0.5
 # Neutral stance from the Hexapod_V6.1 stand pose: each foot straight out from its coxa
 # (so the corner feet sit at 45 degrees), 0.177 m out and 0.134 m below the hips
 NEUTRAL_FOOT = (0.177, 0.0, -0.134)  # leg frame
+NOMINAL_BODY_HEIGHT = -NEUTRAL_FOOT[2]  # m, hips above the ground in the stand pose
+MIN_BODY_HEIGHT = 0.06  # m, set_height's range in gait_controller.hpp
+MAX_BODY_HEIGHT = 0.16  # m
+BODY_HEIGHT_RATE = 0.02  # m/s, how fast the body rises or falls to a new height (body_height_rate)
+
+# Joint limits the IK target has to stay inside, from GaitController::reachable
+MAX_COXA_ANGLE = 1.4  # rad
+FEMUR_MIN = -1.6  # rad, raised
+FEMUR_MAX = 1.4  # rad, lowered
+TIBIA_MIN = -2.35  # rad, straightened
+TIBIA_MAX = 1.06  # rad, folded
+REACH_TOLERANCE = 1e-3  # m
 
 # Hexapod_V6.1, matching the URDF. The tibia is curved: its length is the straight line
 # from the knee axis to the bottom of the foot.

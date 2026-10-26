@@ -151,3 +151,50 @@ def test_cap_command():
     # Capping again changes nothing, so the gait sees the same command the reward does
     again, _ = cap_command(capped, radius, top)
     assert torch.allclose(again, capped)
+
+
+def _walk(gait, steps, commands, **kwargs):
+    """Step the gait, returning the highest point each leg's foot reached and the last targets."""
+    peak = torch.full((gait.num_envs, 6), -1.0)
+    feet = None
+    for _ in range(steps):
+        feet = gait.step(commands, 0.02, **kwargs)
+        peak = torch.maximum(peak, feet[..., 2])
+    return peak, feet
+
+
+def test_default_gait_stays_reachable():
+    gait = TripodGait(1)
+    commands = torch.tensor([[0.17, 0.0, 0.0]])
+    for _ in range(150):
+        feet = gait.step(commands, 0.02)
+        assert gait.ik.reachable(feet).all()
+
+
+def test_body_height_glides_to_target():
+    from hexapod_training.gait.gait_config import BODY_HEIGHT_RATE, NOMINAL_BODY_HEIGHT
+
+    gait = TripodGait(1)
+    commands = torch.zeros(1, 3)
+    target = torch.tensor([0.16])
+    gait.step(commands, 0.02, body_height=target)
+    assert abs(gait.body_height.item() - (NOMINAL_BODY_HEIGHT + BODY_HEIGHT_RATE * 0.02)) < 1e-6
+    _, feet = _walk(gait, 100, commands, body_height=target)
+    assert abs(gait.body_height.item() - 0.16) < 1e-6
+    # Standing feet sit the body height below the hips
+    assert torch.allclose(feet[0, :, 2], torch.full((6,), -0.16))
+    # Outside the controller's range it stops at the limit
+    _walk(gait, 300, commands, body_height=torch.tensor([0.5]))
+    assert abs(gait.body_height.item() - 0.16) < 1e-6
+
+
+def test_swing_lift_raises_the_swing_and_stays_reachable():
+    commands = torch.tensor([[0.1, 0.0, 0.0]])
+    low_peak, _ = _walk(TripodGait(1), 100, commands, swing_lift=torch.full((1, 6), 0.03))
+    high_peak, _ = _walk(TripodGait(1), 100, commands, swing_lift=torch.full((1, 6), 0.10))
+    assert (high_peak > low_peak + 0.05).all()
+    # A high lift on a low body folds the leg past its reach: the swing is lowered to what fits
+    gait = TripodGait(1)
+    for _ in range(200):
+        feet = gait.step(commands, 0.02, swing_lift=torch.full((1, 6), 0.10), body_height=torch.tensor([0.10]))
+        assert gait.ik.reachable(feet).all()
