@@ -18,6 +18,24 @@ from .gait_config import (
 from .trajectory_generator import TrajectoryGenerator
 
 
+def cap_command(commands, max_body_radius, max_foot_speed):
+    """
+    Scale body velocity commands down to what the gait can walk, matching GaitController::walk.
+
+    Args:
+        commands: (num_envs, 3) body velocity (forward m/s, left m/s, yaw rad/s).
+        max_body_radius: largest distance from the body centre to a neutral foot (m).
+        max_foot_speed: fastest a foot can travel relative to the body (m/s).
+
+    Returns:
+        The capped (num_envs, 3) commands, and each one's foot speed (num_envs,), at most max_foot_speed.
+    """
+    forward, left, yaw = commands.unbind(-1)
+    foot_speed = torch.hypot(forward, left) + yaw.abs() * max_body_radius
+    scale = torch.clamp(max_foot_speed / foot_speed.clamp_min(1e-9), max=1.0)
+    return commands * scale.unsqueeze(-1), torch.clamp(foot_speed, max=max_foot_speed)
+
+
 class TripodGait:
     def __init__(self, num_envs, device="cpu"):
         self.num_envs = num_envs
@@ -77,14 +95,11 @@ class TripodGait:
         Returns:
             (num_envs, 6, 3) foot targets per leg 1-6, each in its own leg frame.
         """
-        forward, left, yaw = commands.unbind(-1)
         idle = (commands.abs() < IDLE_DEADZONE).all(dim=-1)
 
         # Current command, capped at what this gait can do
-        foot_speed = torch.hypot(forward, left) + yaw.abs() * self.max_body_radius
-        scale = torch.clamp(self.max_foot_speed / foot_speed.clamp_min(1e-9), max=1.0)
-        forward, left, yaw = forward * scale, left * scale, yaw * scale
-        foot_speed = torch.clamp(foot_speed, max=self.max_foot_speed)
+        commands, foot_speed = cap_command(commands, self.max_body_radius, self.max_foot_speed)
+        forward, left, yaw = commands.unbind(-1)
 
         # Step faster once the stride would exceed MAX_STRIDE_LENGTH
         stride_limited = 2.0 * MAX_STRIDE_LENGTH / ((self.groups - 1) * foot_speed.clamp_min(1e-9))
