@@ -39,7 +39,10 @@ def terrain_levels_progress(
     asked = command.commanded_distance[env_ids]
     done = command.progress[env_ids]
     judged = asked >= min_distance
-    move_up = judged & (done >= promote * asked)
-    move_down = judged & (done < demote * asked)
+    # Progress only counts up to the end of the episode, so a robot that walks well and then falls
+    # still looks on track: one that ended by falling (terminated, not timed out) always moves down
+    fell = env.termination_manager.terminated[env_ids]
+    move_up = judged & (done >= promote * asked) & ~fell
+    move_down = (judged & (done < demote * asked)) | fell
     terrain.update_env_origins(env_ids, move_up, move_down)
     return torch.mean(terrain.terrain_levels.float())
