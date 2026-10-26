@@ -40,3 +40,11 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
+
+
+@configclass
+class RoughPPORunnerCfg(PPORunnerCfg):
+    # asymmetric actor-critic: the critic also gets the "critic" group (true body velocity and the
+    # terrain all around, seen or not), which exists only in training, so the actor can't lean on it
+    experiment_name = "hexapod_rough"
+    obs_groups = {"actor": ["policy"], "critic": ["policy", "critic"]}
