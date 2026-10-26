@@ -102,6 +102,11 @@ class HexapodRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.events.base_external_force_torque.params["asset_cfg"].body_names = "base_link"
         self.terminations.base_contact.params["sensor_cfg"].body_names = "base_link"
 
+        # the template's disturbances are sized for ANYmal: a 0.5 m/s push is 3x this robot's walking
+        # speed and a ±5 cm CoM shift is most of its 16 cm wide body. Start small, raise once it trains.
+        self.events.push_robot.params["velocity_range"] = {"x": (-0.2, 0.2), "y": (-0.2, 0.2)}
+        self.events.base_com.params["com_range"] = {"x": (-0.02, 0.02), "y": (-0.02, 0.02), "z": (-0.01, 0.01)}
+
         # the tripod gait tops out at 2 x 0.06 / 0.7 = 0.171 m/s of foot speed
         self.commands.base_velocity.ranges.lin_vel_x = (-0.17, 0.17)
         self.commands.base_velocity.ranges.lin_vel_y = (-0.10, 0.10)
