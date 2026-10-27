@@ -19,7 +19,7 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.rough_env_cfg:HexapodRoughEnvCfg",
         "default_agent": "rsl_rl",
-        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PPORunnerCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:RoughPPORunnerCfg",
     },
 )
 

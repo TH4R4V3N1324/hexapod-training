@@ -1,18 +1,24 @@
 from isaaclab.utils import configclass, replace
+from isaaclab.sensors import RayCasterCfg
 from isaaclab_tasks.core.velocity.velocity_env_cfg import (
     LocomotionVelocityRoughEnvCfg,
+    MySceneCfg,
     ObservationsCfg,
     RewardsCfg,
     TerminationsCfg,
 )
 from hexapod_training.assets.hexapod_cfg import HEXAPOD_CFG
 from hexapod_training.terrains import HEXAPOD_ROUGH_CFG
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm, RewardTermCfg as RewTerm, SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.utils.noise import UniformNoiseCfg as Unoise
 from isaaclab_tasks.core.velocity import mdp
 from hexapod_training.tasks.locomotion import mdp as hexapod_mdp
 import math
+
+TOF_PITCH = 0.0  # rad, down; the V6.1 pod faces straight ahead (hexapod-ros2's README says 10 deg)
+
 
 @configclass
 class HexapodRewards(RewardsCfg):
@@ -64,7 +70,11 @@ class HexapodObservations(ObservationsCfg):
     @configclass
     class PolicyCfg(ObservationsCfg.PolicyCfg):
         base_lin_vel = None  # nothing reliable on the robot; leg odometry over-reads
-        height_scan = None  # off until stage 4 (depth / ToF height map)
+        # the ground truth all around the body isn't available on the robot; the ToF camera's map is
+        height_scan = None
+        # what hexapod-ros2's HeightMap holds: ground the front camera has seen, remembered as the
+        # robot walks onto it, with a mask for cells it hasn't (noise is added per point, inside)
+        height_map = ObsTerm(func=hexapod_mdp.tof_height_map, params={"sensor_cfg": SceneEntityCfg("tof_camera")})
 
         # ST3215 load readback, noisy and slow on the real servos. The noise is in N·m (added before
         # the scale), and the scale makes full stall (2.94 N·m) read 1
@@ -72,7 +82,24 @@ class HexapodObservations(ObservationsCfg):
         # per leg sin/cos of its cycle phase and a swing flag, from the gait in the action term
         gait_phase = ObsTerm(func=hexapod_mdp.gait_phase)
 
+    @configclass
+    class CriticCfg(ObsGroup):
+        """Ground truth only the simulator has, for the critic on top of the policy's observations."""
+
+        base_lin_vel = ObsTerm(func=mdp.base_lin_vel)
+        # the terrain all around the body, seen or not, on the same grid as the policy's height map
+        height_scan = ObsTerm(
+            func=mdp.height_scan,
+            params={"sensor_cfg": SceneEntityCfg("height_scanner"), "offset": 0.145},
+            clip=(-0.5, 0.5),
+        )
+
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+
     policy: PolicyCfg = PolicyCfg()
+    critic: CriticCfg = CriticCfg()
 
 
 @configclass
@@ -82,7 +109,29 @@ class HexapodTerminations(TerminationsCfg):
 
 
 @configclass
+class HexapodSceneCfg(MySceneCfg):
+    # Arducam ToF (B0410) on the front camera pod, as front_depth_camera_link in hexapod-ros2's
+    # hexapod.cameras.xacro: 0.138 m ahead of and 0.0124 m below base_link, facing straight ahead
+    # (tof_pitch; positive tilts it down). Only the terrain is cast against, so the robot's own legs
+    # are never seen, as the real map's 6 cm self-filter around the feet intends.
+    tof_camera = RayCasterCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/Geometry/base_link",
+        offset=RayCasterCfg.OffsetCfg(
+            pos=(0.138, 0.0, -0.0124), rot=(0.0, math.sin(TOF_PITCH / 2), 0.0, math.cos(TOF_PITCH / 2))
+        ),
+        ray_alignment="base",
+        pattern_cfg=hexapod_mdp.ToFPatternCfg(),
+        max_distance=4.0,  # far mode
+        update_period=0.2,  # map_update_rate: 5 Hz
+        mesh_prim_paths=["/World/ground"],
+        global_world_only=True,
+        debug_vis=False,
+    )
+
+
+@configclass
 class HexapodRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
+    scene: HexapodSceneCfg = HexapodSceneCfg(num_envs=4096, env_spacing=2.5)
     rewards: HexapodRewards = HexapodRewards()
     observations: HexapodObservations = HexapodObservations()
     terminations: HexapodTerminations = HexapodTerminations()
@@ -93,7 +142,10 @@ class HexapodRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # scene: your robot and your terrain go into the template's slots
         self.scene.robot = replace(HEXAPOD_CFG, prim_path="{ENV_REGEX_NS}/Robot")
         self.scene.terrain.terrain_generator = HEXAPOD_ROUGH_CFG
+        # the critic's ground-truth scan: the policy's 0.7 x 0.7 m grid at 0.05 m
         self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/Geometry/base_link"
+        self.scene.height_scanner.pattern_cfg.resolution = 0.05
+        self.scene.height_scanner.pattern_cfg.size = [0.7, 0.7]
         self.scene.contact_forces.prim_path = "{ENV_REGEX_NS}/Robot/Geometry/.*"
 
         # the template names ANYmal's links; rename them to yours
