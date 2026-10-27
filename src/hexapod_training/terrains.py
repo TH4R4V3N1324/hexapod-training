@@ -12,17 +12,25 @@ HEXAPOD_ROUGH_CFG = TerrainGeneratorCfg(
     num_cols=10,             # tiles per level
     horizontal_scale=0.05,   # height-field cell size, m
     vertical_scale=0.002,
+    # Robots start on each tile's centre platform: a pyramid goes down from it, an inverted one up,
+    # so both are needed to learn climbing. With curriculum on, each column is one sub-terrain, so
+    # the proportions are tenths: flat 1, rough 2, slopes 1 + 1, stairs 2 + 2, boxes 1 of 10 columns.
     sub_terrains={
-        "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.2),
+        "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.1),
         "rough": terrain_gen.HfRandomUniformTerrainCfg(
-            proportion=0.3, noise_range=(0.0, 0.03), noise_step=0.005),
+            proportion=0.2, noise_range=(0.0, 0.03), noise_step=0.005),
         "slopes": terrain_gen.HfPyramidSlopedTerrainCfg(
-            proportion=0.2, slope_range=(0.0, 0.35), platform_width=1.0),
+            proportion=0.1, slope_range=(0.0, 0.35), platform_width=1.0),
+        "slopes up": terrain_gen.HfPyramidSlopedTerrainCfg(
+            proportion=0.1, slope_range=(0.0, 0.35), platform_width=1.0, inverted=True),
         "stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
-            proportion=0.15, step_height_range=(0.01, 0.06),
+            proportion=0.2, step_height_range=(0.01, 0.06),
+            step_width=0.2, platform_width=1.0),
+        "stairs up": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+            proportion=0.2, step_height_range=(0.01, 0.06),
             step_width=0.2, platform_width=1.0),
         "boxes": terrain_gen.MeshRandomGridTerrainCfg(
-            proportion=0.15, grid_width=0.3,
+            proportion=0.1, grid_width=0.3,
             grid_height_range=(0.01, 0.05), platform_width=1.0),
     },
 )
